@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Khảo sát sự hài lòng</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 50px;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333333;
+        }
+
+        p {
+            font-size: 18px;
+            color: #555;
+        }
+
+        #startSurveyBtn {
+            padding: 10px 20px;
+            font-size: 18px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #startSurveyBtn:hover {
+            background-color: #45a049;
+        }
+
+        #thankYouMessage {
+            display: none;
+            font-size: 18px;
+            color: #555;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Cảm ơn bạn đã dành thời gian!</h1>
+        <p>Vui lòng bấm nút dưới đây để bắt đầu khảo sát.</p>
+        <button id="startSurveyBtn">Bắt đầu khảo sát</button>
+        <p id="thankYouMessage">Bạn đã tham gia khảo sát rồi. Cảm ơn bạn!</p>
+    </div>
+
+    <script>
+        const fpPromise = FingerprintJS.load();
+
+        // Function to get a cookie by name
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+        }
+
+        // Function to set a cookie
+        function setCookie(name, value, days) {
+            let expires = "";
+            if (days) {
+                const date = new Date();
+                date.setTime(date.getTime() + (days*24*60*60*1000));
+                expires = "; expires=" + date.toUTCString();
+            }
+            document.cookie = name + "=" + (value || "")  + expires + "; path=/";
+        }
+
+        // Function to generate a unique survey code
+        function generateSurveyCode() {
+            const randomPart = Math.floor(1000 + Math.random() * 9000); // Mã ngẫu nhiên 4 chữ số
+            const now = new Date();
+            const timePart = now.getHours() + ":" + now.getMinutes() + ":" + now.getSeconds();
+            return randomPart + "_" + timePart;
+        }
+
+        // Check if the user has already participated
+        function hasUserParticipated() {
+            const userId = localStorage.getItem('userId') || getCookie('userId');
+            const hasParticipated = localStorage.getItem('hasParticipated') || getCookie('hasParticipated');
+            return userId && hasParticipated;
+        }
+
+        // When the user clicks the "Start Survey" button
+        document.getElementById('startSurveyBtn').addEventListener('click', async function() {
+            // Load the fingerprint and create the user ID
+            const fp = await fpPromise;
+            const result = await fp.get();
+
+            const canvasFingerprint = result.components.canvas.value;
+            const userAgent = navigator.userAgent;
+            const screenResolution = screen.width + 'x' + screen.height;
+            const platform = navigator.platform;
+
+            // Optional: If available, add Audio Fingerprinting
+            const audioFingerprint = result.components.audio.value;
+
+            const userId = canvasFingerprint + userAgent + screenResolution + platform;
+
+            // Store the user ID in local storage and cookie
+            if (!localStorage.getItem('userId')) {
+                localStorage.setItem('userId', userId);
+            }
+            if (!getCookie('userId')) {
+                setCookie('userId', userId, 365);
+            }
+
+            // Check if the user has already participated
+            if (hasUserParticipated()) {
+                document.getElementById('startSurveyBtn').style.display = 'none';
+                document.getElementById('thankYouMessage').style.display = 'block';
+            } else {
+                // Generate the survey code
+                const surveyCode = generateSurveyCode();
+                const employeeCode = new URLSearchParams(window.location.search).get('employeeCode');
+
+                // Save fingerprint and other data to Google Sheets
+                const scriptURL = 'https://script.google.com/macros/s/AKfycby5ifLmhb6pKxdRFVJh_1S4Y8BLH7tXXnG99vehpDfVE9dy5YGzICJlhywMO18F0SKm/exec';
+                fetch(scriptURL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        canvasFingerprint: canvasFingerprint,
+                        userAgent: userAgent,
+                        screenResolution: screenResolution,
+                        platform: platform,
+                        audioFingerprint: audioFingerprint,  // Optional
+                        surveyCode: surveyCode, 
+                        employeeCode: employeeCode 
+                    })
+                })
+                .then(response => response.json())
+                .then(data => console.log('Success:', data))
+                .catch((error) => console.error('Error:', error));
+
+                // Redirect to the Google Form with the survey code and employee code
+                const formUrl = "https://docs.google.com/forms/d/e/1FAIpQLSfyL4JXPzyZkkn11cCziGMALU5TNZ992Y-JjFz0d52Dgy0GJg/viewform?usp=pp_url&entry.647484804=" + employeeCode + "&entry.1804340207=" + surveyCode;
+                window.location.href = formUrl;
+
+                // Mark that the user has participated
+                localStorage.setItem('hasParticipated', 'true');
+                setCookie('hasParticipated', 'true', 365);
+            }
+        });
+
+        // Check if the user has already participated on page load
+        if (hasUserParticipated()) {
+            document.getElementById('startSurveyBtn').style.display = 'none';
+            document.getElementById('thankYouMessage').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
